@@ -162,7 +162,7 @@ class VASTParser extends RegexParsers {
   }
 
   def vtexpr: Parser[VASTTypeExpr] = vtast
-  def vtast: Parser[VASTTypeExpr] = vastTSub
+  def vtast: Parser[VASTTypeExpr] = vastTImpl
 
 
   def vastTImpl: Parser[VASTTypeExpr] = vastTSub ~ rep(tokImpl ~> vastTImpl) ^^ {
