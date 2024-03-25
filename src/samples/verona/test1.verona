@@ -1,0 +1,12 @@
+type A = String
+type B = A
+
+def a(x: T): S
+
+class A = {
+  def u(x: T): U where (X <: U)
+  type B = T & S
+  var x : U
+}
+
+class Subt[S, T] where (S <: T) = {}
