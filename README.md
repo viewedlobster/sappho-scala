@@ -1,5 +1,5 @@
-# Verona-scala
-Verona parser and type system implementation written in scala
+# sappho-scala
+Sappho parser and type system implementation written in scala
 
 ## TODOs
 
