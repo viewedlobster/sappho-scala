@@ -7,25 +7,19 @@ trait Showable[A]:
 /* Verona types */
 trait VType
 
-type VName = String
-type FName = String
-
-case class VTVar(name : VName) extends VType
-
-case class VTName(name : VName) extends VType
-
 case class VTConj(a : VType, b : VType) extends VType
 case class VTDisj(a : VType, b : VType) extends VType
 
-case class VTTrait(f : FName, t : VType) extends VType
+case class VTTrait(f : VName, t : VType) extends VType
 
-case class VTAlias(n : VTName) extends VType
-case class VTClass(n : VTName, args : List[VType]) extends VType
+case class VTParam(name : VName) extends VType
+case class VTClass(name: VName) extends VType
+case class VTAlias(name: VName) extends VType
 
-case class VTAbs(param : VTName, body : VType) extends VType
-case class VTAppl(t : VType, arg : VType) extends VType
+case class VTAbs(param : List[VTParam], body : VType) extends VType
+case class VTAppl(t : VType, arg : List[VType]) extends VType
 
-case class VTFunc(a : VType, b : VType) extends VType
+case class VTFunc(a : List[VType], b : VType) extends VType
 
 case class VTImpl(a : VType, b : VType) extends VType
 case class VTBox(t : VType) extends VType

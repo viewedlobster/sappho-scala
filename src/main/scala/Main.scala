@@ -20,4 +20,11 @@ class RunConf(val inFile: String)
   // println(VTParser.vtparse("forall A. B => A -> A"))
 
   def in = StreamReader(new InputStreamReader(new FileInputStream(inFile)))
-  VASTParser.vastDefParsePrint(in)
+  VASTParser.vastParseFile("file:" ++ inFile, in) match {
+    case Some(ast) => {
+      println(ast)
+    }
+    case _ => println("stuff failed")
+  }
+
+  
