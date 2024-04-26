@@ -1,12 +1,14 @@
 type A = String
-type B = A
+type B = A & C
 
 def a(x: T): S
 
-class A = {
+class A[T] = {
   def u(x: T): U where (X <: U)
   type B = T & S
   var x : U
 }
 
-class Subt[S, T] where (S <: T) = {}
+
+type X = (x : T) -> S
+type Y = ((x : T) -> S)
