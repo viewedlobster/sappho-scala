@@ -4,29 +4,19 @@ type VName = String
 
 trait Pass
 
-trait Parsed extends Pass
-trait Resolved extends Pass
-trait Typed extends Pass
-trait TC extends Pass
+class BeforeAll extends Pass
+class Parsed extends Pass
+class Resolved extends Pass
+class Typed extends Pass
+class TC extends Pass
 
 type PrevPass[P <: Pass] = P match {
+  case Parsed => BeforeAll
   case Resolved => Parsed
 }
 type NextPass[P <: Pass] = P match {
   case Parsed => Resolved
 }
-
-//type ResolvedName
-//
-//type NameEnv = Map[VName, ResolvedName]
-//
-//trait VAST[P <: SimplyPass]
-//
-//trait VASTDef[P] extends VAST[P] {
-//  var _nameEnv : Option[NameEnv]
-//  var _rname : Option[ResolvedName]
-//  var _tpe: Option[VType]
-//}
 
 sealed trait TypeTag
 object TopTag extends TypeTag
@@ -45,37 +35,34 @@ given NodeId = InvalidId
 type NameEnv = Map[VName, VResolvedName]
 
 trait PassInfo {
-  type FromPasses[PI[_], P] = P match {
-    case Parsed => PI[P]
+  type FromPasses[PI[_ <: Pass], P] = P match {
+    case BeforeAll => Info
     case _ => PI[P] & FromPasses[PI, PrevPass[P]]
   }
 
   type _ResolvEnv[P <: Pass] = P match {
-    case Parsed => {}
-    case Resolved => { val renv : NameEnv }
+    case Parsed => Info
+    case Resolved => Info { val renv : NameEnv }
   }
-  type ResolvEnv[P] = FromPasses[_ResolvEnv, P]
+  type ResolvEnv[P <: Pass] = FromPasses[_ResolvEnv, P]
 
-  type _Def[P <: Pass] = P match {
-    case Parsed => {}
-    case Resolved => { val renv : NameEnv }
-  }
-  type Def[P <: Pass] = FromPasses[_Def, P]
+  type Def[P <: Pass] = ResolvEnv[P]
 
-  type _TypeExpr[P <: Pass] = P match {
-    case Parsed => {}
-    case Resolved => { val renv : NameEnv }
-  }
-  type TypeExpr[P <: Pass] = FromPasses[_TypeExpr, P]
+  type TypeExpr[P <: Pass] = ResolvEnv[P]
 
   type _Name[P <: Pass] = P match {
-    case Parsed => {}
-    case Resolved => { val rname : VResolvedName }
+    case Parsed => Info
+    case Resolved => Info { val rname : VResolvedName }
   }
   type TName[P <: Pass] = TypeExpr[P] & FromPasses[_Name, P]
 
+  type _File[P <: Pass] = P match {
+    case Parsed => Info { val filePath : String }
+    case _ => Info
+  }
+
   type TBlock[P <: Pass] = TypeExpr[P]
-  type TFile[P <: Pass] = TypeExpr[P]
+  type TFile[P <: Pass] = TypeExpr[P] & FromPasses[_File, P]
   type TBinOp[P <: Pass] = TypeExpr[P]
   type TAppl[P <: Pass] = TypeExpr[P]
   type TAbs[P <: Pass] = TypeExpr[P]
@@ -92,161 +79,210 @@ object VTop extends VResolvedName(using TopId)
 object VBot extends VResolvedName(using BotId)
 object VUndef extends VResolvedName(using UndefId)
 
-class Info[+T](val fields: Map[String, Any]) extends Selectable {
+
+class Info(val fields : Map[String, Any]) extends Selectable {
   def selectDynamic(name: String): Any = fields(name)
   def this(elems : (String, Any)*) = {
     this(elems.toMap)
   }
-  def combine[S](other : Info[S]): Info[S & T] = {
-    Info[S & T](fields ++ other.fields)
-  }
-
-  def ++ = combine
-}
-
-class INameEnv(env : NameEnv) extends Info[{val env : NameEnv}]("env" -> env)
-class IEmpty() extends Info[{}]()
-
-sealed trait VAST[P <: Pass, PI[_ <: Pass]](using id : NodeId) {
-  type PassI[_ <: Pass] = PI[P]
-  val info : Info[PassI[P]]
 }
 
 
-trait VASTTypeExpr[P <: Pass, PI[_]](using id : NodeId) extends VAST[P, PI]
+object Info {
+  def combine[A <: Info, B <: Info](a : A, b : B) : A & B = Info(a.fields ++ b.fields).asInstanceOf[A & B]
+}
 
-trait VASTExpr[P <: Pass, PI[_]](using id : NodeId) extends VAST[P, PI]
+object IEmpty {
+  type IEmpty = Info
+
+  def apply() : IEmpty = Info()
+}
+
+object IFile {
+  type IFile = Info { val filePath : String }
+
+  def apply(fp : String) : IFile = Info("filePath" -> fp).asInstanceOf[IFile]
+}
+
+object INameEnv {
+  type INameEnv = Info { val renv : NameEnv }
+
+  def apply(e : NameEnv) : INameEnv = Info("nameEnv" -> e).asInstanceOf[INameEnv]
+}
+object IDud {
+  type IDud = Info { val dudval : String }
+
+  def apply() : IDud = Info("dudval" -> null).asInstanceOf[IDud]
+}
+
+val a = IFile("hello")
+val b = INameEnv(Map("hhe" -> VTop))
+
+val c = Info.combine(a, b)
+val d = Info.combine(c, IDud())
+
+
+val path = c.filePath
+val dud = d.dudval
+
+
+sealed trait VAST[P <: Pass](using id : NodeId) {
+  type PassI[_ <: Pass]
+  val info : PassI[P]
+}
+
+
+trait VASTTypeExpr[P <: Pass](using id : NodeId) extends VAST[P]
+
+trait VASTExpr[P <: Pass](using id : NodeId) extends VAST[P]
 
 case class VASTTName[P <: Pass](
   val name : VName,
-  val info: Info[PassInfo#TName[P]]
-  )(using id : NodeId) extends VASTTypeExpr[P, PassInfo#TName]
+  val info: PassInfo#TName[P]
+  )(using id : NodeId) extends VASTTypeExpr[P] {
+    type PassI[P <: Pass] = PassInfo#TName[P]
+  }
 
 case class VASTTDefBlock[P <: Pass](
   val inner: List[VASTDef[P]],
-  val info : Info[PassInfo#TBlock[P]]
-  )(using id : NodeId) extends VASTTypeExpr[P, PassInfo#TBlock]
+  val info : PassInfo#TBlock[P]
+  )(using id : NodeId) extends VASTTypeExpr[P] {
+    type PassI[P <: Pass] = PassInfo#TBlock[P]
+  }
 case class VASTTDefFile[P <: Pass](
   val inner: List[VASTDef[P]],
-  val info : Info[PassInfo#TFile[P]]
-  )(using id : NodeId) extends VASTTypeExpr[P, PassInfo#TFile]
+  val info : PassInfo#TFile[P]
+  )(using id : NodeId) extends VASTTypeExpr[P] {
+    type PassI[P <: Pass] = PassInfo#TFile[P]
+  }
 
 
-trait VASTTBinOp[P <: Pass] extends VASTTypeExpr[P, PassInfo#TBinOp]
+trait VASTTBinOp[P <: Pass] extends VASTTypeExpr[P] {
+  type PassI[P <: Pass] = PassInfo#TBinOp[P]
+}
 case class VASTTConj[P <: Pass](
-  val a: VASTTypeExpr[P, ?],
-  val b: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#TBinOp[P]]
+  val a: VASTTypeExpr[P],
+  val b: VASTTypeExpr[P],
+  val info: PassInfo#TBinOp[P]
   )(using id : NodeId) extends VASTTBinOp[P]
 case class VASTTDisj[P <: Pass](
-  val a: VASTTypeExpr[P, ?],
-  val b: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#TBinOp[P]]
+  val a: VASTTypeExpr[P],
+  val b: VASTTypeExpr[P],
+  val info: PassInfo#TBinOp[P]
   )(using id : NodeId) extends VASTTBinOp[P]
 case class VASTTSub[P <: Pass](
-  val a: VASTTypeExpr[P, ?],
-  val b: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#TBinOp[P]]
+  val a: VASTTypeExpr[P],
+  val b: VASTTypeExpr[P],
+  val info: PassInfo#TBinOp[P]
   )(using id : NodeId) extends VASTTBinOp[P]
 case class VASTTImpl[P <: Pass](
-  val a: VASTTypeExpr[P, ?],
-  val b: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#TBinOp[P]]
+  val a: VASTTypeExpr[P],
+  val b: VASTTypeExpr[P],
+  val info: PassInfo#TBinOp[P]
   )(using id : NodeId) extends VASTTBinOp[P]
 
 case class VASTTAppl[P <: Pass](
-  val hole: VASTTypeExpr[P, ?],
-  val args: List[VASTTypeExpr[P, ?]],
-  val info: Info[PassInfo#TAppl[P]]
-  )(using id : NodeId) extends VASTTypeExpr[P, PassInfo#TAppl]
+  val hole: VASTTypeExpr[P],
+  val args: List[VASTTypeExpr[P]],
+  val info: PassInfo#TAppl[P]
+  )(using id : NodeId) extends VASTTypeExpr[P] {
+    type PassI[P <: Pass] = PassInfo#TAppl[P]
+  }
 case class VASTTAbs[P <: Pass](
   val params: List[VASTDefParam[P]],
-  val body: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#TAbs[P]])(using id : NodeId) extends VASTTypeExpr[P, PassInfo#TAbs]
+  val body: VASTTypeExpr[P],
+  val info: PassInfo#TAbs[P])(using id : NodeId) extends VASTTypeExpr[P] {
+    type PassI[P <: Pass] = PassInfo#TAbs[P]
+  }
 
 case class VASTTBox[P <: Pass](
-  val a: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#TBox[P]]
-  )(using id : NodeId) extends VASTTypeExpr[P, PassInfo#TBox]
+  val a: VASTTypeExpr[P],
+  val info: PassInfo#TBox[P]
+  )(using id : NodeId) extends VASTTypeExpr[P] {
+    type PassI[P <: Pass] = PassInfo#TBox[P]
+  }
 
 case class VASTTArrow[P <: Pass](
   val a: List[VASTFunParam[P]],
-  val b: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#TArrow[P]]
-  )(using id : NodeId) extends VASTTypeExpr[P, PassInfo#TArrow]
+  val b: VASTTypeExpr[P],
+  val info: PassInfo#TArrow[P]
+  )(using id : NodeId) extends VASTTypeExpr[P] {
+    type PassI[P <: Pass] = PassInfo#TArrow[P]
+  }
 
 case class VASTFunParam[P <: Pass](
   val name: VName,
-  val tpe: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#FunParam[P]]
-  ) extends VAST[P, PassInfo#FunParam]
+  val tpe: VASTTypeExpr[P],
+  val info: PassInfo#FunParam[P]
+  ) extends VAST[P] {
+    type PassI[P <: Pass] = PassInfo#FunParam[P]
+  }
 
-sealed trait VASTDef[P <: Pass](using id : NodeId) extends VAST[P, PassInfo#Def]
-case class VASTDefParam[P <: Pass](name: VName)(using id : NodeId) extends VASTDef[P]
+sealed trait VASTDef[P <: Pass](using id : NodeId) extends VAST[P] {
+  type PassI[P <: Pass] = PassInfo#Def[P]
+}
+case class VASTDefParam[P <: Pass](
+  val name: VName,
+  val info: PassInfo#Def[P])(using id : NodeId) extends VASTDef[P]
 case class VASTDefRaw[P <: Pass](
   val name: VName,
-  val tpe: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#Def[P]]
+  val tpe: VASTTypeExpr[P],
+  val info: PassInfo#Def[P]
 )(using id : NodeId) extends VASTDef[P]
 case class VASTDefType[P <: Pass](
   val name: VName,
   val tparams: List[VASTDefParam[P]],
-  val whr: Option[VASTTypeExpr[P, ?]],
-  val body: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#Def[P]]
+  val whr: Option[VASTTypeExpr[P]],
+  val body: VASTTypeExpr[P],
+  val info: PassInfo#Def[P]
   )(using id : NodeId) extends VASTDef[P]
 case class VASTDefClass[P <: Pass](
   val name: VName,
   val tparams: List[VASTDefParam[P]],
-  val whr: Option[VASTTypeExpr[P, ?]],
-  val body: VASTTypeExpr[P, ?],
-  val info: Info[PassInfo#Def[P]]
+  val whr: Option[VASTTypeExpr[P]],
+  val body: VASTTypeExpr[P],
+  val info: PassInfo#Def[P]
   )(using id : NodeId) extends VASTDef[P]
 case class VASTDefDef[P <: Pass](
   val name: VName,
   val tparams: List[VASTDefParam[P]],
   val params: List[VASTFunParam[P]],
-  val ret: VASTTypeExpr[P, ?],
-  val whr: Option[VASTTypeExpr[P, ?]],
-  val body : Option[VASTExpr[P, ?]],
-  val info: Info[PassInfo#Def[P]]
+  val ret: VASTTypeExpr[P],
+  val whr: Option[VASTTypeExpr[P]],
+  val body : Option[VASTExpr[P]],
+  val info: PassInfo#Def[P]
   )(using id : NodeId) extends VASTDef[P]
 case class VASTDefVar[P <: Pass](
   val name: VName,
-  val tpe : VASTTypeExpr[P, ?],
-  val body : Option[VASTExpr[P, ?]],
-  val info: Info[PassInfo#Def[P]]
+  val tpe : VASTTypeExpr[P],
+  val body : Option[VASTExpr[P]],
+  val info: PassInfo#Def[P]
   )(using id : NodeId) extends VASTDef[P]
 
 
-trait Decorator[T, S, V] {
-  extension (t : T) def decorate(v : V) : S
+case class VASTTDud[P <: Pass]() extends VASTTypeExpr[P] {
+  type PassI[P <: Pass] = Info
+  val info = IEmpty()
 }
 
-given Decorator[VASTDefClass[Parsed], VASTDefClass[Resolved], NameEnv] with {
-  extension (cd : VASTDefClass[Parsed])
-    def decorate(env: NameEnv) : VASTDefClass[Resolved] = ???
+trait ASTPass[P1, T, P2] {
+  extension (s : P1) def passWith(t : T): P2
 }
 
-given Decorator[VASTDefParam[Parsed], VASTDefParam[Resolved], NameEnv] with {
-  extension (t: VASTDefParam[Parsed]) def decorate(v: NameEnv): VASTDefParam[Resolved] = ???
+given ASTPass[VASTTypeExpr[Parsed], NameEnv, VASTTypeExpr[Resolved]] with {
+  extension (texp : VASTTypeExpr[Parsed]) def passWith(env: NameEnv): VASTTypeExpr[Resolved] = {
+    texp match {
+      case VASTTDefFile(inner, info) => println(info.filePath); VASTTDud()
+      case _ => VASTTDud()
+    }
+  }
 }
 
-given Decorator[List[VASTDefParam[Parsed]], List[VASTDefParam[Resolved]], NameEnv] with {
-  extension (ds: List[VASTDefParam[Parsed]]) def decorate(env: NameEnv): List[VASTDefParam[Resolved]] = 
-    ds.map(_.decorate(env))
+given ASTPass[VASTDef[Parsed], NameEnv, VASTDef[Resolved]] with {
+  extension (d : VASTDef[Parsed]) def passWith(env: NameEnv): VASTDef[Resolved] = {
+    d match {
+      case VASTDefClass(name, tparams, whr, body, info) => VASTDefClass(name, Nil, whr.map(_.passWith(env)), body.passWith(env), Info.combine(info, INameEnv(env)))
+    }
+  }
 }
-
-//object NameEnvDecorator[K, V] extends Decorator[VAST[Parsed], VAST[Resolved], NameEnv] {
-//  def decorate(ast: VAST[Parsed]) : VAST[Resoved] = {
-//    val env = Map[VName, VASTTResolvedName]()
-//
-//    decorateRec()
-//  }
-//
-//  def decorateRec(ast: VAST[Parsed], env : NameEnv) : VAST[Resolved] = {
-//
-//  }
-//}
-
 

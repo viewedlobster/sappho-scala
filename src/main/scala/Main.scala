@@ -23,6 +23,8 @@ class RunConf(val inFile: String)
   VASTParser.vastParseFile("file:" ++ inFile, in) match {
     case Some(ast) => {
       println(ast)
+      import verona.typing.given_ASTPass_VASTDef_NameEnv_VASTDef
+      ast.passWith(Map())
     }
     case _ => println("stuff failed")
   }

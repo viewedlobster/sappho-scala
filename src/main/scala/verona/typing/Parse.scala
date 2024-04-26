@@ -30,14 +30,14 @@ class VASTParser extends RegexParsers {
   def tokRParen = """\)""".r
 
   def leftAssocComb[T, P <: Pass](
-    comb: (a: VASTTypeExpr[P, ?], b: T) => VASTTypeExpr[P, ?],
-    z : VASTTypeExpr[P, ?],
+    comb: (a: VASTTypeExpr[P], b: T) => VASTTypeExpr[P],
+    z : VASTTypeExpr[P],
     ts : List[T]) =
       ts.foldLeft(z)(comb)
 
   def vname: Parser[VName] = guard(not(kw)) ~> """[a-zA-Z]+""".r ^^ { _.toString }
 
-  def typeParam: Parser[VASTDefParam[Parsed]] = vname ^^ { VASTDefParam(_) }
+  def typeParam: Parser[VASTDefParam[Parsed]] = vname ^^ { VASTDefParam(_, IEmpty()) }
   def typeParams: Parser[List[VASTDefParam[Parsed]]] = tokLBrac ~ typeParam ~ rep(""",""".r ~> typeParam) ~ tokRBrac ^^ {
     case _ ~ p ~ ps ~ _ => {p :: ps}
   }
@@ -62,7 +62,7 @@ class VASTParser extends RegexParsers {
 
   def whereCond = """where""".r ~> vtexpr
 
-  def hasType: Parser[VASTTypeExpr[Parsed, ?]] = """:""".r ~> vtexpr
+  def hasType: Parser[VASTTypeExpr[Parsed]] = """:""".r ~> vtexpr
   def defDef: Parser[VASTDefDef[Parsed]] =
     kwDef ~ vname ~ opt(typeParams) ~ opt(params) ~ hasType ~
     opt(whereCond) ~ opt(tokEquals ~> vexpr) ^^ {
@@ -87,57 +87,57 @@ class VASTParser extends RegexParsers {
     case name ~ tpe => VASTDefRaw(name, tpe, IEmpty())
   }
 
-  def vtexpr: Parser[VASTTypeExpr[Parsed, ?]] = vtast
-  def vtast: Parser[VASTTypeExpr[Parsed, ?]] = vastTImpl
+  def vtexpr: Parser[VASTTypeExpr[Parsed]] = vtast
+  def vtast: Parser[VASTTypeExpr[Parsed]] = vastTImpl
 
 
-  def vastTArrow: Parser[VASTTypeExpr[Parsed, ?]] = params ~ tokArrow ~ vtexpr ^^ {
-    case params ~ _ ~ texpr => VASTTArrow(params, texpr, IEmpty()) : VASTTypeExpr[Parsed, PassInfo#TArrow]
+  def vastTArrow: Parser[VASTTypeExpr[Parsed]] = params ~ tokArrow ~ vtexpr ^^ {
+    case params ~ _ ~ texpr => VASTTArrow(params, texpr, IEmpty())
   }
 
-  def vastTImpl: Parser[VASTTypeExpr[Parsed, ?]] = vastTSub ~ rep(tokImpl ~> vastTImpl) ^^ {
-    case a ~ bs => leftAssocComb(VASTTImpl.apply[Parsed], a, bs)
+  def vastTImpl: Parser[VASTTypeExpr[Parsed]] = vastTSub ~ rep(tokImpl ~> vastTImpl) ^^ {
+    case a ~ bs => leftAssocComb(VASTTImpl[Parsed](_, _, IEmpty()), a, bs)
   }
-  def vastTSub: Parser[VASTTypeExpr] = vastTDisj ~ rep(tokSub ~> vastTSub) ^^ {
-    case a ~ bs => leftAssocComb(VASTTSub.apply, a, bs)
+  def vastTSub: Parser[VASTTypeExpr[Parsed]] = vastTDisj ~ rep(tokSub ~> vastTSub) ^^ {
+    case a ~ bs => leftAssocComb(VASTTSub[Parsed](_, _, IEmpty()), a, bs)
   }
-  def vastTDisj: Parser[VASTTypeExpr] = vastTConj ~ rep(tokPip ~> vastTDisj) ^^ {
-    case a ~ bs => leftAssocComb(VASTTDisj.apply, a, bs)
+  def vastTDisj: Parser[VASTTypeExpr[Parsed]] = vastTConj ~ rep(tokPip ~> vastTDisj) ^^ {
+    case a ~ bs => leftAssocComb(VASTTDisj[Parsed](_, _, IEmpty()), a, bs)
   }
-  def vastTConj: Parser[VASTTypeExpr] = vastTAppl ~ rep(tokAmp ~> vastTConj) ^^ {
-    case a ~ bs => leftAssocComb(VASTTConj.apply, a, bs)
+  def vastTConj: Parser[VASTTypeExpr[Parsed]] = vastTAppl ~ rep(tokAmp ~> vastTConj) ^^ {
+    case a ~ bs => leftAssocComb(VASTTConj[Parsed](_, _, IEmpty()), a, bs)
   }
-  def vastTAppl: Parser[VASTTypeExpr] = vastTDiscr ~ rep(vastTArgs) ^^ {
-    case a ~ argss => leftAssocComb(VASTTAppl.apply, a, argss)
+  def vastTAppl: Parser[VASTTypeExpr[Parsed]] = vastTDiscr ~ rep(vastTArgs) ^^ {
+    case a ~ argss => leftAssocComb(VASTTAppl[Parsed](_, _, IEmpty()), a, argss)
   }
 
-  def vastTArgs: Parser[List[VASTTypeExpr]] =
+  def vastTArgs: Parser[List[VASTTypeExpr[Parsed]]] =
     tokLBrac ~>
     vtexpr ~ rep(tokComma ~> vtexpr)
     <~ tokRBrac ^^ {
       case a ~ bs => a :: bs
     }
 
-  def vastTParen: Parser[VASTTypeExpr] = tokLParen ~> vtexpr <~ tokRParen
+  def vastTParen: Parser[VASTTypeExpr[Parsed]] = tokLParen ~> vtexpr <~ tokRParen
 
-  def vastTDiscr: Parser[VASTTypeExpr] = vastTArrow | vastTParen | vastTDefBlock | vastTAbs | vastTBox | vastTParsedName
+  def vastTDiscr: Parser[VASTTypeExpr[Parsed]] = vastTArrow | vastTParen | vastTDefBlock | vastTAbs | vastTBox | vastTParsedName
 
-  def vastTParsedName: Parser[VASTTParsedName] = vname ^^ { VASTTParsedName(_) }
-  def vastTAbs: Parser[VASTTAbs] = kwForall ~> typeParams ~ tokDot ~ vtexpr ^^ {
-    case pars ~ _ ~ tpe => VASTTAbs(pars, tpe)
+  def vastTParsedName: Parser[VASTTName[Parsed]] = vname ^^ { VASTTName(_, IEmpty()) }
+  def vastTAbs: Parser[VASTTAbs[Parsed]] = kwForall ~> typeParams ~ tokDot ~ vtexpr ^^ {
+    case pars ~ _ ~ tpe => VASTTAbs(pars, tpe, IEmpty())
   }
-  def vastTBox: Parser[VASTTBox] = kwBox ~> vtexpr ^^ { VASTTBox(_) }
+  def vastTBox: Parser[VASTTBox[Parsed]] = kwBox ~> vtexpr ^^ { VASTTBox(_, IEmpty()) }
 
-  def vastTDefBlock: Parser[VASTTypeExpr] = tokLGull ~> rep(vastDef) <~ tokRGull ^^ {
-    case defs => VASTTDefBlock(defs)
+  def vastTDefBlock: Parser[VASTTypeExpr[Parsed]] = tokLGull ~> rep(vastDef) <~ tokRGull ^^ {
+    case defs => VASTTDefBlock(defs, IEmpty())
   }
   def vastDef = defType | defClass | defDef | defVar | defRaw
 
-  def vastTDefFile: Parser[VASTTypeExpr] = rep(vastDef) ^^ { VASTTDefFile(_) }
+  def vastTDefFile(filePath : String): Parser[VASTTypeExpr[Parsed]] = rep(vastDef) ^^ { VASTTDefFile(_, IFile(filePath)) }
 
-  def vastClassFile(cname: VName) = vastTDefFile ^^ { VASTDefClass(cname, Nil, None, _) }
+  def vastClassFile(filePath: String, cname: VName) = vastTDefFile(filePath) ^^ { VASTDefClass(cname, Nil, None, _, IEmpty()) }
 
-  def vexpr: Parser[VASTExpr] = ???
+  def vexpr: Parser[VASTExpr[Parsed]] = ???
 }
 
 object VASTParser extends VASTParser {
@@ -155,8 +155,8 @@ object VASTParser extends VASTParser {
       }
   }
 
-  def vastParseFile(cname: VName, in: StreamReader) : Option[VASTDefClass] = {
-    parse(vastClassFile(cname), in) match {
+  def vastParseFile(cname: VName, in: StreamReader) : Option[VASTDefClass[Parsed]] = {
+    parse(vastClassFile(cname, cname), in) match {
       case Success(result, _) => Some(result)
       case Error(msg, next) => println(msg); None
       case Failure(msg, next) => println(msg); None
